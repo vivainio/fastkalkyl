@@ -72,13 +72,17 @@ module Language =
     let (|DIV|_|)    s = "/"  |> MatchSymbol s
     let (|LPAREN|_|) s = "\(" |> MatchSymbol s
     let (|RPAREN|_|) s = "\)" |> MatchSymbol s
+    let (|LISTSEP|_|) s = ";" |> MatchSymbol s
 
     let rec (|Factor|_|) = function
     | NUMBER (n, rest) ->
         (Ast.Expr.Number n, rest) |> Some
 
+    // FunApply
     | ID (f, LPAREN (Star (|Expression|_|) [] (args, RPAREN rest))) ->
         (Ast.Expr.FunApply (f, args), rest) |> Some
+    | LPAREN (Sum (e, RPAREN (rest))) ->
+        (e, rest) |> Some
     | _ ->
         None
         
@@ -100,7 +104,13 @@ module Language =
         (e, rest) |> Some
     | _ ->
         None
-    and (|Expression|_|) = (|Sum|_|)
+    and (|Expression|_|) = function 
+    | Sum (e,rest) -> (e, rest) |> Some
+    | _ -> None
+    
+    and (|ArgumentExpr|_|) = function
+    | Expression (e, LISTSEP (rest)) -> (e, rest) |> Some
+    | _ -> None
 
     let (|Eof|_|) s =
         if s |> String.IsNullOrEmpty then
@@ -114,7 +124,7 @@ module Language =
 
 [<EntryPoint>]
 let main argv = 
-    match "1.1 + 1 + 1 + fun(12.1)" with 
+    match "1+(2+3) + 4 + fun((2+4) 12)" with 
     | Language.Expression (e, Language.Eof) ->
         printf "%A" e
     0
