@@ -3,7 +3,7 @@ open System.Globalization
 open System.Collections.Generic
 
 let emit (t: string) e = 
-    //printfn "Emit %s %A" t e
+    printfn "Emit %s %A" t e
     Some e
 
 let fail (t: string) d =
@@ -139,22 +139,23 @@ module Language =
             (Ast.Expr.Operator ("<", e1, e2), rest) |> Some
         | Sum (e1, GT ( Sum( e2, rest))) ->
             (Ast.Expr.Operator (">", e1, e2), rest) |> Some
-        | Factor (e, rest) -> (e,rest) |> Some
+        | Sum (e, rest) -> (e,rest) |> Some
         | _ -> 
             None)
 
     and (|BoolLogic|_|) input = 
         match input with
         | BoolExp (e1, BOOLAND ( BoolExp( e2, rest))) ->
-            (Ast.Expr.Operator ("&&", e1, e2), rest) |> Some 
+            (Ast.Expr.Operator ("&&", e1, e2), rest) |> emit "And" 
         | BoolExp (e1, BOOLOR ( BoolExp( e2, rest))) ->
             (Ast.Expr.Operator ("||", e1, e2), rest) |> Some
-
+        | BoolExp (e, rest) ->
+            (e, rest) |> Some
         | _ -> None
 
-    and (|Expression|_|) = memoize (function 
-        | BoolLogic (e, rest) -> (e,rest) |> emit "bool"
-        | Sum (e,rest) -> (e, rest) |> emit "sum"
+    and (|Expression|_|) = memoize (function
+        | BoolLogic (e, rest) -> (e,rest) |> emit "BoolLogic"
+        | Sum (e,rest) -> (e, rest) |> emit "Sum"
         | _ -> None)
     
     and (|ManyArgs|_|) input = 
@@ -172,7 +173,7 @@ module Language =
         | _ -> None
 
     and (|ArgumentExpr|_|) = function
-    | Term (e, LISTSEP (rest)) -> (e, rest) |> Some
+    | Expression (e, LISTSEP (rest)) -> (e, rest) |> Some
     | _ -> None
 
     and (|VarRef|_|) = function
@@ -193,38 +194,24 @@ module Language =
 [<EntryPoint>]
 let main argv =
 
-    match "1 = 1+1" with
-    | Language.BoolExp (e, Language.Eof) ->
-        printfn "%A" e
+    let test = function
+        | Language.Expression (e, Language.Eof) ->
+            printfn "%A" e
 
-    match "[foo] && [bar]" with
-    | Language.BoolLogic (e, Language.Eof) ->
-        printfn "%A" e
+    test "call([foo] && [bar]; 12)" 
+    test "1 = 1+1"
+    test "[foo] && [bar]"
+    test "2 = 3"
+    test "[test] > 2"
+    test "(2+1 && [test] > 2)"
+    test "someval(1 && (2+1 && [test] > 2))"
+    test "2 = 1+1 && (2 > someval(1 && (2+1 && [test] > 2)))"
+    test "1 < 2"
+    test "[My.Variable]"
+    test "f(1;2;3)"
+    test "f(1;2)"
 
-    match "2 = 1+1 && 2 > somebool(12;22)" with
-    | Language.BoolLogic (e, Language.Eof) ->
-        printfn "%A" e
-
-    match "1 < 2" with
-    | Language.BoolExp (e, Language.Eof) ->
-        printfn "%A" e
-
-    match "[My.Variable]" with
-    | Language.VarRef (e, Language.Eof) ->
-        printfn "%A" e
-    match "1;" with
-    | Language.ArgumentExpr (e, Language.Eof) ->
-        printfn "%A" e
-    match "1;2;3;" with
-    | Language.ManyArgs (e, Language.Eof) ->
-        printfn "%A" e
-    match "1;2;3" with
-    | Language.ExprList (e, Language.Eof) ->
-        printfn "%A" e
-    match "1+(2+3) + 4 + fun.foo((2+4); 12; 22; [My.Variable])" with 
-    | Language.Expression (e, Language.Eof) ->
-        printf "%A" e
-    | _ -> ()
+    test "1+(2+3) + 4 + fun.foo((2+4); 12; 22; [My.Variable])"
     0
 
 
