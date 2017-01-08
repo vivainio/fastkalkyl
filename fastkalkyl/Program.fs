@@ -7,6 +7,7 @@ module Ast =
     | Number   of decimal
     | BinOp    of (decimal -> decimal -> decimal) * Expr * Expr
     | FunApply of var * Expr list
+    | VarRef    of string
     with
         static member Sum (e1, e2) = BinOp (( + ), e1, e2)
         static member Diff (e1, e2) = BinOp (( - ), e1, e2)
@@ -64,7 +65,7 @@ module Language =
         "[0-9]+\.?[0-9]*" |> MatchToken s
             (fun (n, rest) -> (n |> parseDouble, rest) |> Some)
     let (|ID|_|) s =
-        "[a-zA-Z]+" |> MatchToken s (fun res -> res |> Some)
+        @"[a-zA-Z\.]+" |> MatchToken s (fun res -> res |> Some)
     let (|PLUS|_|)   s = "\+" |> MatchSymbol s
     let (|MINUS|_|)  s = "-"  |> MatchSymbol s
     let (|MUL|_|)    s = "\*" |> MatchSymbol s
@@ -72,16 +73,19 @@ module Language =
     let (|LPAREN|_|) s = "\(" |> MatchSymbol s
     let (|RPAREN|_|) s = "\)" |> MatchSymbol s
     let (|LISTSEP|_|) s = ";" |> MatchSymbol s
+    let (|LSQBRACKET|_|) s = "\[" |> MatchSymbol s
+    let (|RSQBRACKET|_|) s = "\]" |> MatchSymbol s
 
     let rec (|Factor|_|) = function
     | NUMBER (n, rest) ->
         (Ast.Expr.Number n, rest) |> Some
-
     // FunApply
-    | ID (f, LPAREN (Star (|Expression|_|) [] (args, RPAREN rest))) ->
+    | ID (f, LPAREN (ExprList (args, RPAREN rest))) ->
         (Ast.Expr.FunApply (f, args), rest) |> Some
     | LPAREN (Sum (e, RPAREN (rest))) ->
         (e, rest) |> Some
+    | VarRef (name, rest) ->
+        (Ast.Expr.VarRef name, rest) |> Some
     | _ ->
         None
         
@@ -125,6 +129,11 @@ module Language =
     | Expression (e, LISTSEP (rest)) -> (e, rest) |> Some
     | _ -> None
 
+    and (|VarRef|_|) = function
+    | LSQBRACKET (ID (name, RSQBRACKET rest)) ->
+        (name, rest) |> Some
+    | _ -> None
+        
     let (|Eof|_|) s =
         if s |> String.IsNullOrEmpty then
             () |> Some
@@ -137,6 +146,9 @@ module Language =
 
 [<EntryPoint>]
 let main argv =
+    match "[My.Variable]" with
+    | Language.VarRef (e, Language.Eof) ->
+        printfn "%A" e
     match "1;" with
     | Language.ArgumentExpr (e, Language.Eof) ->
         printfn "%A" e
@@ -146,7 +158,7 @@ let main argv =
     match "1;2;3" with
     | Language.ExprList (e, Language.Eof) ->
         printfn "%A" e
-    match "1+(2+3) + 4 + fun((2+4) 12)" with 
+    match "1+(2+3) + 4 + fun.foo((2+4); 12; 22; [My.Variable])" with 
     | Language.Expression (e, Language.Eof) ->
         printf "%A" e
     | _ -> ()
