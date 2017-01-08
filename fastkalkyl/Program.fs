@@ -127,7 +127,7 @@ module Language =
             (e, rest) |> Some
         | _ ->
             None)
-
+    
     and (|Sum|_|) = memoize (function 
         | Term (e1, PLUS (Sum (e2, rest))) ->
             (Ast.Expr.Sum (e1, e2), rest) |> Some
@@ -137,7 +137,7 @@ module Language =
             (e, rest) |> Some
         | _ ->
             None)
-
+    // bind lower than arithmetic
     and (|BoolExp|_|) = memoize (function
         | Sum (e1, EQ ( Sum( e2, rest))) ->
             (Ast.Expr.Operator ("=", e1, e2), rest) |> Some
@@ -148,8 +148,8 @@ module Language =
         | Sum (e, rest) -> (e,rest) |> Some
         | _ -> 
             None)
-
-    and (|BoolLogic|_|) input = 
+    // top level, lowest binding ops
+    and (|Expression|_|) input = 
         match input with
         | BoolExp (e1, BOOLAND ( BoolExp( e2, rest))) ->
             (Ast.Expr.Operator ("&&", e1, e2), rest) |> emit "And" 
@@ -159,11 +159,6 @@ module Language =
             (e, rest) |> Some
         | _ -> None
 
-    and (|Expression|_|) = memoize (function
-        // | Sum (e,rest) -> (e, rest) |> emit "Sum"
-        | BoolLogic (e, rest) -> (e,rest) |> emit "BoolLogic"
-        | _ -> None)
-    
     and (|ManyArgs|_|) input = 
         match input with
         | Star (|ArgumentExpr|_|) [] (args, rest) -> 
