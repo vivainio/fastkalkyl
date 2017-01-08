@@ -17,6 +17,7 @@ let memoize f =
         else let res = f x
              cache.[x] <- res
              res
+
 module Ast =
     type var = string
     type Expr =
@@ -90,62 +91,57 @@ module Language =
     let (|LPAREN|_|) s = @"\(" |> MatchSymbol s
     let (|RPAREN|_|) s = @"\)" |> MatchSymbol s
     let (|LISTSEP|_|) s = ";" |> MatchSymbol s
-    let (|LSQBRACKET|_|) s = "\[" |> MatchSymbol s
-    let (|RSQBRACKET|_|) s = "\]" |> MatchSymbol s
+    let (|LSQBRACKET|_|) s = @"\[" |> MatchSymbol s
+    let (|RSQBRACKET|_|) s = @"\]" |> MatchSymbol s
     let (|EQ|_|)     s = "=" |> MatchSymbol s
     let (|LT|_|)     s = "<" |> MatchSymbol s
     let (|GT|_|)     s = ">" |> MatchSymbol s
     let (|BOOLAND|_|) s = "&&" |> MatchSymbol s
     let (|BOOLOR|_|) s = "||" |> MatchSymbol s
 
-    let rec (|Factor|_|) = function
-    | NUMBER (n, rest) ->
-        (Ast.Expr.Number n, rest) |> Some
-    // FunApply
-    | ID (f, LPAREN (ExprList (args, RPAREN rest))) ->
-        (Ast.Expr.FunApply (f, args), rest) |> Some
-    | LPAREN (Expression (e, RPAREN (rest))) ->
-        (e, rest) |> Some
-    | VarRef (name, rest) ->
-        (Ast.Expr.VarRef name, rest) |> Some
-    | _ ->
-        None
+    let rec (|Factor|_|) = memoize (function
+        | NUMBER (n, rest) ->
+            (Ast.Expr.Number n, rest) |> Some
+        // FunApply
+        | ID (f, LPAREN (ExprList (args, RPAREN rest))) ->
+            (Ast.Expr.FunApply (f, args), rest) |> Some
+        | LPAREN (Expression (e, RPAREN (rest))) ->
+            (e, rest) |> Some
+        | VarRef (name, rest) ->
+            (Ast.Expr.VarRef name, rest) |> Some
+        | _ ->
+            None)
         
-    and (|Term|_|) = 
-        memoize (fun input ->
-            match input with
-            | Factor (e1, MUL (Term (e2, rest))) ->
-                (Ast.Expr.Prod (e1, e2), rest) |> Some
-            | Factor (e1, DIV (Term (e2, rest))) ->
-                (Ast.Expr.Ratio (e1, e2), rest) |> Some
-            | Factor (e, rest) ->
-                (e, rest) |> Some
-            | _ ->
-                None)
-    and (|Sum|_|) =
-        memoize (fun input -> 
-            match input with      
-            | Term (e1, PLUS (Sum (e2, rest))) ->
-                (Ast.Expr.Sum (e1, e2), rest) |> Some
-            | Term (e1, MINUS (Sum (e2, rest))) ->
-                (Ast.Expr.Diff (e1, e2), rest) |> Some
-            | Term (e, rest) ->
-                (e, rest) |> Some
-            | _ ->
-                None)
+    and (|Term|_|) = memoize (function
+        | Factor (e1, MUL (Term (e2, rest))) ->
+            (Ast.Expr.Prod (e1, e2), rest) |> Some
+        | Factor (e1, DIV (Term (e2, rest))) ->
+            (Ast.Expr.Ratio (e1, e2), rest) |> Some
+        | Factor (e, rest) ->
+            (e, rest) |> Some
+        | _ ->
+            None)
 
-    and (|BoolExp|_|) =
-        memoize (fun input -> 
-            match input with
-            | Sum (e1, EQ ( Sum( e2, rest))) ->
-                (Ast.Expr.Operator ("=", e1, e2), rest) |> Some
-            | Sum (e1, LT ( Sum( e2, rest))) ->
-                (Ast.Expr.Operator ("<", e1, e2), rest) |> Some
-            | Sum (e1, GT ( Sum( e2, rest))) ->
-                (Ast.Expr.Operator (">", e1, e2), rest) |> Some
-            | Factor (e, rest) -> (e,rest) |> Some
-            | _ -> 
-                None)
+    and (|Sum|_|) = memoize (function 
+        | Term (e1, PLUS (Sum (e2, rest))) ->
+            (Ast.Expr.Sum (e1, e2), rest) |> Some
+        | Term (e1, MINUS (Sum (e2, rest))) ->
+            (Ast.Expr.Diff (e1, e2), rest) |> Some
+        | Term (e, rest) ->
+            (e, rest) |> Some
+        | _ ->
+            None)
+
+    and (|BoolExp|_|) = memoize (function
+        | Sum (e1, EQ ( Sum( e2, rest))) ->
+            (Ast.Expr.Operator ("=", e1, e2), rest) |> Some
+        | Sum (e1, LT ( Sum( e2, rest))) ->
+            (Ast.Expr.Operator ("<", e1, e2), rest) |> Some
+        | Sum (e1, GT ( Sum( e2, rest))) ->
+            (Ast.Expr.Operator (">", e1, e2), rest) |> Some
+        | Factor (e, rest) -> (e,rest) |> Some
+        | _ -> 
+            None)
 
     and (|BoolLogic|_|) input = 
         match input with
@@ -156,10 +152,10 @@ module Language =
 
         | _ -> None
 
-    and (|Expression|_|) = function 
-    | BoolLogic (e, rest) -> (e,rest) |> emit "bool"
-    | Sum (e,rest) -> (e, rest) |> emit "sum"
-    | _ -> None
+    and (|Expression|_|) = memoize (function 
+        | BoolLogic (e, rest) -> (e,rest) |> emit "bool"
+        | Sum (e,rest) -> (e, rest) |> emit "sum"
+        | _ -> None)
     
     and (|ManyArgs|_|) input = 
         match input with
