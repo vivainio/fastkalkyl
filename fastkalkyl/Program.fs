@@ -1,5 +1,6 @@
 ﻿open System
 open System.Globalization
+open System.Collections.Generic
 
 let emit (t: string) e = 
     //printfn "Emit %s %A" t e
@@ -9,6 +10,13 @@ let fail (t: string) d =
     //printfn "Fail %s %A" t d
     None
 
+let memoize f =
+    let cache = Dictionary<_, _>()
+    fun x ->
+        if cache.ContainsKey(x) then cache.[x]
+        else let res = f x
+             cache.[x] <- res
+             res
 module Ast =
     type var = string
     type Expr =
@@ -103,41 +111,46 @@ module Language =
     | _ ->
         None
         
-    and (|Term|_|) = function
-    | Factor (e1, MUL (Term (e2, rest))) ->
-        (Ast.Expr.Prod (e1, e2), rest) |> Some
-    | Factor (e1, DIV (Term (e2, rest))) ->
-        (Ast.Expr.Ratio (e1, e2), rest) |> Some
-    | Factor (e, rest) ->
-        (e, rest) |> Some
-    | _ ->
-        None
-    and (|Sum|_|) = function
-    | Term (e1, PLUS (Sum (e2, rest))) ->
-        (Ast.Expr.Sum (e1, e2), rest) |> Some
-    | Term (e1, MINUS (Sum (e2, rest))) ->
-        (Ast.Expr.Diff (e1, e2), rest) |> Some
-    | Term (e, rest) ->
-        (e, rest) |> Some
-    | _ ->
-        None
+    and (|Term|_|) = 
+        memoize (fun input ->
+            match input with
+            | Factor (e1, MUL (Term (e2, rest))) ->
+                (Ast.Expr.Prod (e1, e2), rest) |> Some
+            | Factor (e1, DIV (Term (e2, rest))) ->
+                (Ast.Expr.Ratio (e1, e2), rest) |> Some
+            | Factor (e, rest) ->
+                (e, rest) |> Some
+            | _ ->
+                None)
+    and (|Sum|_|) =
+        memoize (fun input -> 
+            match input with      
+            | Term (e1, PLUS (Sum (e2, rest))) ->
+                (Ast.Expr.Sum (e1, e2), rest) |> Some
+            | Term (e1, MINUS (Sum (e2, rest))) ->
+                (Ast.Expr.Diff (e1, e2), rest) |> Some
+            | Term (e, rest) ->
+                (e, rest) |> Some
+            | _ ->
+                None)
 
-
-    and (|BoolExp|_|) input =
-        match input with
-        | Sum (e1, EQ ( Sum( e2, rest))) ->
-            (Ast.Expr.Operator ("=", e1, e2), rest) |> Some
-        | Sum (e1, LT ( Sum( e2, rest))) ->
-            (Ast.Expr.Operator ("<", e1, e2), rest) |> Some
-        | Sum (e1, GT ( Sum( e2, rest))) ->
-            (Ast.Expr.Operator (">", e1, e2), rest) |> Some
-        | Factor (e, rest) -> (e,rest) |> Some
-        | _ -> None
+    and (|BoolExp|_|) =
+        memoize (fun input -> 
+            match input with
+            | Sum (e1, EQ ( Sum( e2, rest))) ->
+                (Ast.Expr.Operator ("=", e1, e2), rest) |> Some
+            | Sum (e1, LT ( Sum( e2, rest))) ->
+                (Ast.Expr.Operator ("<", e1, e2), rest) |> Some
+            | Sum (e1, GT ( Sum( e2, rest))) ->
+                (Ast.Expr.Operator (">", e1, e2), rest) |> Some
+            | Factor (e, rest) -> (e,rest) |> Some
+            | _ -> 
+                None)
 
     and (|BoolLogic|_|) input = 
         match input with
         | BoolExp (e1, BOOLAND ( BoolExp( e2, rest))) ->
-            (Ast.Expr.Operator ("&&", e1, e2), rest) |> emit "AND" 
+            (Ast.Expr.Operator ("&&", e1, e2), rest) |> Some 
         | BoolExp (e1, BOOLOR ( BoolExp( e2, rest))) ->
             (Ast.Expr.Operator ("||", e1, e2), rest) |> Some
 
