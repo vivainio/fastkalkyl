@@ -13,7 +13,6 @@ module Ast =
         static member Prod (e1, e2) = BinOp (( * ), e1, e2)
         static member Ratio (e1, e2) = BinOp (( / ), e1, e2)
 
-
 module Language =
     open System
     open System.Text.RegularExpressions
@@ -108,6 +107,20 @@ module Language =
     | Sum (e,rest) -> (e, rest) |> Some
     | _ -> None
     
+    and (|ManyArgs|_|) input = 
+        match input with
+        | Star (|ArgumentExpr|_|) [] (args, rest) -> 
+            (args, rest) |> Some
+        | _ -> 
+            printfn "bad input %A" input
+            None
+   
+    and (|ExprList|_|) input =
+        match input with 
+        | ManyArgs (args1, Expression (arg2, rest)) ->
+            (args1 @ [arg2], rest) |> Some
+        | _ -> None
+
     and (|ArgumentExpr|_|) = function
     | Expression (e, LISTSEP (rest)) -> (e, rest) |> Some
     | _ -> None
@@ -123,10 +136,20 @@ module Language =
                 None
 
 [<EntryPoint>]
-let main argv = 
+let main argv =
+    match "1;" with
+    | Language.ArgumentExpr (e, Language.Eof) ->
+        printfn "%A" e
+    match "1;2;3;" with
+    | Language.ManyArgs (e, Language.Eof) ->
+        printfn "%A" e
+    match "1;2;3" with
+    | Language.ExprList (e, Language.Eof) ->
+        printfn "%A" e
     match "1+(2+3) + 4 + fun((2+4) 12)" with 
     | Language.Expression (e, Language.Eof) ->
         printf "%A" e
+    | _ -> ()
     0
 
 
