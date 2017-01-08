@@ -18,10 +18,15 @@ let memoize f =
              cache.[x] <- res
              res
 
+type Const =
+| Num   of decimal
+| String of string
+| Bool of bool
+
 module Ast =
     type var = string
     type Expr =
-    | Number   of decimal
+    | Const    of Const
     | String   of string
     | BinOp    of string * Expr * Expr
     | Operator of string * Expr * Expr
@@ -103,9 +108,10 @@ module Language =
     let (|BOOLAND|_|) s = "&&" |> MatchSymbol s
     let (|BOOLOR|_|) s = "||" |> MatchSymbol s
 
+    // lowest level, stands alone 
     let rec (|Factor|_|) = memoize (function
         | NUMBER (n, rest) ->
-            (Ast.Expr.Number n, rest) |> Some
+            (Ast.Expr.Const <| Const.Num n, rest) |> Some
         // FunApply
         | ID (f, LPAREN (ExprList (args, RPAREN rest))) ->
             (Ast.Expr.FunApply (f, args), rest) |> Some
@@ -114,10 +120,10 @@ module Language =
         | VarRef (name, rest) ->
             (Ast.Expr.VarRef name, rest) |> Some
         | STRING (s, rest) -> 
-            (Ast.Expr.String s, rest) |> Some
+            (Ast.Expr.Const <| Const.String s, rest) |> Some
         | _ ->
             None)
-        
+    // 2*3        
     and (|Term|_|) = memoize (function
         | Factor (e1, MUL (Term (e2, rest))) ->
             (Ast.Expr.Prod (e1, e2), rest) |> Some
@@ -127,7 +133,7 @@ module Language =
             (e, rest) |> Some
         | _ ->
             None)
-    
+    // 2*3 + 1
     and (|Sum|_|) = memoize (function 
         | Term (e1, PLUS (Sum (e2, rest))) ->
             (Ast.Expr.Sum (e1, e2), rest) |> Some
@@ -213,6 +219,7 @@ let main argv =
     test "f(1;2)"
     test @"""Hello world"""
     test @""""""
+    test @"""hello"" + ""world"""
     test "1+(2+3) + 4 + fun.foo((2+4); 12; 22; [My.Variable])"
     0
 
