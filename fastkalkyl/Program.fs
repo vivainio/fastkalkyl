@@ -1,18 +1,27 @@
 ﻿open System
 open System.Globalization
 
+let emit (t: string) e = 
+    //printfn "Emit %s %A" t e
+    Some e
+
+let fail (t: string) d =
+    //printfn "Fail %s %A" t d
+    None
+
 module Ast =
     type var = string
     type Expr =
     | Number   of decimal
-    | BinOp    of (decimal -> decimal -> decimal) * Expr * Expr
+    | BinOp    of string * Expr * Expr
+    | Operator of string * Expr * Expr
     | FunApply of var * Expr list
     | VarRef    of string
     with
-        static member Sum (e1, e2) = BinOp (( + ), e1, e2)
-        static member Diff (e1, e2) = BinOp (( - ), e1, e2)
-        static member Prod (e1, e2) = BinOp (( * ), e1, e2)
-        static member Ratio (e1, e2) = BinOp (( / ), e1, e2)
+        static member Sum (e1, e2) = BinOp ( "+", e1, e2)
+        static member Diff (e1, e2) = BinOp ( "-", e1, e2)
+        static member Prod (e1, e2) = BinOp ( "*", e1, e2)
+        static member Ratio (e1, e2) = BinOp ("/", e1, e2)
 
 module Language =
     open System
@@ -26,8 +35,8 @@ module Language =
             else
                 None
 
-    let (|WS|_|) = matchToken "[ |\t|\n|\n\r]+"
-    let (|COMMENT|_|) = matchToken "#.*[\n|\r\n]"
+    let (|WS|_|) = matchToken @"[ |\t|\n|\n\r]+"
+    let (|COMMENT|_|) = matchToken @"#.*[\n|\r\n]"
 
     let (|WHITESPACE|_|) s =
         match s with
@@ -66,15 +75,20 @@ module Language =
             (fun (n, rest) -> (n |> parseDouble, rest) |> Some)
     let (|ID|_|) s =
         @"[a-zA-Z\.]+" |> MatchToken s (fun res -> res |> Some)
-    let (|PLUS|_|)   s = "\+" |> MatchSymbol s
+    let (|PLUS|_|)   s = @"\+" |> MatchSymbol s
     let (|MINUS|_|)  s = "-"  |> MatchSymbol s
-    let (|MUL|_|)    s = "\*" |> MatchSymbol s
+    let (|MUL|_|)    s = @"\*" |> MatchSymbol s
     let (|DIV|_|)    s = "/"  |> MatchSymbol s
-    let (|LPAREN|_|) s = "\(" |> MatchSymbol s
-    let (|RPAREN|_|) s = "\)" |> MatchSymbol s
+    let (|LPAREN|_|) s = @"\(" |> MatchSymbol s
+    let (|RPAREN|_|) s = @"\)" |> MatchSymbol s
     let (|LISTSEP|_|) s = ";" |> MatchSymbol s
     let (|LSQBRACKET|_|) s = "\[" |> MatchSymbol s
     let (|RSQBRACKET|_|) s = "\]" |> MatchSymbol s
+    let (|EQ|_|)     s = "=" |> MatchSymbol s
+    let (|LT|_|)     s = "<" |> MatchSymbol s
+    let (|GT|_|)     s = ">" |> MatchSymbol s
+    let (|BOOLAND|_|) s = "&&" |> MatchSymbol s
+    let (|BOOLOR|_|) s = "||" |> MatchSymbol s
 
     let rec (|Factor|_|) = function
     | NUMBER (n, rest) ->
@@ -82,7 +96,7 @@ module Language =
     // FunApply
     | ID (f, LPAREN (ExprList (args, RPAREN rest))) ->
         (Ast.Expr.FunApply (f, args), rest) |> Some
-    | LPAREN (Sum (e, RPAREN (rest))) ->
+    | LPAREN (Expression (e, RPAREN (rest))) ->
         (e, rest) |> Some
     | VarRef (name, rest) ->
         (Ast.Expr.VarRef name, rest) |> Some
@@ -107,8 +121,31 @@ module Language =
         (e, rest) |> Some
     | _ ->
         None
+
+
+    and (|BoolExp|_|) input =
+        match input with
+        | Sum (e1, EQ ( Sum( e2, rest))) ->
+            (Ast.Expr.Operator ("=", e1, e2), rest) |> Some
+        | Sum (e1, LT ( Sum( e2, rest))) ->
+            (Ast.Expr.Operator ("<", e1, e2), rest) |> Some
+        | Sum (e1, GT ( Sum( e2, rest))) ->
+            (Ast.Expr.Operator (">", e1, e2), rest) |> Some
+        | Factor (e, rest) -> (e,rest) |> Some
+        | _ -> None
+
+    and (|BoolLogic|_|) input = 
+        match input with
+        | BoolExp (e1, BOOLAND ( BoolExp( e2, rest))) ->
+            (Ast.Expr.Operator ("&&", e1, e2), rest) |> emit "AND" 
+        | BoolExp (e1, BOOLOR ( BoolExp( e2, rest))) ->
+            (Ast.Expr.Operator ("||", e1, e2), rest) |> Some
+
+        | _ -> None
+
     and (|Expression|_|) = function 
-    | Sum (e,rest) -> (e, rest) |> Some
+    | BoolLogic (e, rest) -> (e,rest) |> emit "bool"
+    | Sum (e,rest) -> (e, rest) |> emit "sum"
     | _ -> None
     
     and (|ManyArgs|_|) input = 
@@ -126,7 +163,7 @@ module Language =
         | _ -> None
 
     and (|ArgumentExpr|_|) = function
-    | Expression (e, LISTSEP (rest)) -> (e, rest) |> Some
+    | Term (e, LISTSEP (rest)) -> (e, rest) |> Some
     | _ -> None
 
     and (|VarRef|_|) = function
@@ -146,6 +183,23 @@ module Language =
 
 [<EntryPoint>]
 let main argv =
+
+    match "1 = 1+1" with
+    | Language.BoolExp (e, Language.Eof) ->
+        printfn "%A" e
+
+    match "[foo] && [bar]" with
+    | Language.BoolLogic (e, Language.Eof) ->
+        printfn "%A" e
+
+    match "2 = 1+1 && 2 > somebool(12;22)" with
+    | Language.BoolLogic (e, Language.Eof) ->
+        printfn "%A" e
+
+    match "1 < 2" with
+    | Language.BoolExp (e, Language.Eof) ->
+        printfn "%A" e
+
     match "[My.Variable]" with
     | Language.VarRef (e, Language.Eof) ->
         printfn "%A" e
