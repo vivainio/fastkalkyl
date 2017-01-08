@@ -22,6 +22,7 @@ module Ast =
     type var = string
     type Expr =
     | Number   of decimal
+    | String   of string
     | BinOp    of string * Expr * Expr
     | Operator of string * Expr * Expr
     | FunApply of var * Expr list
@@ -82,6 +83,9 @@ module Language =
         let parseDouble s = Decimal.Parse(s, CultureInfo.InvariantCulture)
         "[0-9]+\.?[0-9]*" |> MatchToken s
             (fun (n, rest) -> (n |> parseDouble, rest) |> Some)
+    let (|STRING|_|) s =
+        "\".*?\"" |> MatchToken s
+            (fun (s, rest) -> (s.[1..s.Length-2], rest) |> Some)
     let (|ID|_|) s =
         @"[a-zA-Z\.]+" |> MatchToken s (fun res -> res |> Some)
     let (|PLUS|_|)   s = @"\+" |> MatchSymbol s
@@ -109,6 +113,8 @@ module Language =
             (e, rest) |> Some
         | VarRef (name, rest) ->
             (Ast.Expr.VarRef name, rest) |> Some
+        | STRING (s, rest) -> 
+            (Ast.Expr.String s, rest) |> Some
         | _ ->
             None)
         
@@ -154,8 +160,8 @@ module Language =
         | _ -> None
 
     and (|Expression|_|) = memoize (function
+        // | Sum (e,rest) -> (e, rest) |> emit "Sum"
         | BoolLogic (e, rest) -> (e,rest) |> emit "BoolLogic"
-        | Sum (e,rest) -> (e, rest) |> emit "Sum"
         | _ -> None)
     
     and (|ManyArgs|_|) input = 
@@ -210,7 +216,8 @@ let main argv =
     test "[My.Variable]"
     test "f(1;2;3)"
     test "f(1;2)"
-
+    test @"""Hello world"""
+    test @""""""
     test "1+(2+3) + 4 + fun.foo((2+4); 12; 22; [My.Variable])"
     0
 
